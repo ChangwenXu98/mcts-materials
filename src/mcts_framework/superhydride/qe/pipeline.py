@@ -1,7 +1,7 @@
 """
 The ground-state funnel: a structure in, the four Tc descriptors out.
 
-    [vc-relax x2] -> scf -> nscf -> pp.x (ELF cube) -> projwfc.x (PDOS)
+    [MACE pre-relax] -> [vc-relax x2 | pressure-matched scf] -> nscf -> pp.x -> projwfc.x
 
 Three steps deserve their reasons stated, because skipping them produces
 numbers rather than errors:
@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Dict, Optional
 
 from ..descriptors import DEFAULT_TOL, compute_descriptors, read_elf_cube
+from ..prerelax import MacePrerelax
 from .inputs import (
     QESettings,
     hydrogen_fractional_coordinates,
@@ -39,6 +40,7 @@ from .inputs import (
     write_pw_input,
 )
 from .outputs import hydrogen_dos_fraction, parse_pw_output, relaxed_atoms
+from .pressure import PressureMatch, scale_to_volume
 from .runner import QEError, QERunner
 
 if TYPE_CHECKING:
@@ -83,6 +85,8 @@ def run_ground_state(
     workdir: str,
     *,
     pressure_gpa: Optional[float] = None,
+    prerelax: Optional[MacePrerelax] = None,
+    pressure_match: Optional[PressureMatch] = None,
     relax: bool = True,
     relax_passes: int = 2,
     keep_cube: bool = False,
@@ -96,9 +100,19 @@ def run_ground_state(
         settings: the numerical protocol, held fixed across a campaign.
         runner: how to invoke the QE binaries.
         workdir: this candidate's private directory. One run, one directory.
-        pressure_gpa: target pressure for the relaxation. Required when
-            ``relax`` is True - a hydride relaxed to 0 GPa is a different
-            material from the same hydride at 200 GPa.
+        pressure_gpa: target pressure. Required when ``relax`` is True - a
+            hydride relaxed to 0 GPa is a different material from the same
+            hydride at 200 GPa - and used as the target for the pre-relaxation
+            when one is given.
+        prerelax: optional cheap relaxation (MACE) run before anything else.
+            With ``relax=False`` this is the campaign mode: the geometry comes
+            from the potential and the DFT step is single-point, so the SCF's
+            recorded pressure is a *measurement* of how far the pre-relaxed cell
+            sits from the target rather than a converged equilibrium.
+        pressure_match: drive the SCF's own stress onto a target by isotropic
+            cell scaling, instead of a vc-relax. Each trial IS the SCF, so the
+            accepted one is what the ELF and PDOS are read from and nothing is
+            wasted. Only meaningful with ``relax=False``.
         relax: run vc-relax before the SCF. Set False when the structure is
             already relaxed at this pressure with this protocol.
         relax_passes: vc-relax passes. 2 is the minimum that removes the Pulay
@@ -127,8 +141,13 @@ def run_ground_state(
 
     directory = Path(workdir)
     directory.mkdir(parents=True, exist_ok=True)
-    ranks = runner.ranks_for(atoms, settings.ecutwfc)
     current = atoms.copy()
+
+    # 0. Cheap pre-relaxation, so the DFT step starts from a sensible cell.
+    if prerelax is not None:
+        current = prerelax.relax(current, pressure_gpa=pressure_gpa)
+
+    ranks = runner.ranks_for(current, settings.ecutwfc)
 
     # 1. Relax at the target pressure, twice, to shed the Pulay error.
     if relax:
@@ -163,19 +182,48 @@ def run_ground_state(
             # The cell changed, so the plane count did too.
             ranks = runner.ranks_for(current, settings.ecutwfc)
 
-    # 2. A fresh SCF on the cell whose ELF we are about to dump.
-    scf_text = runner.run(
-        "pw.x",
-        write_pw_input(
-            current, settings, calculation="scf", prefix=PREFIX, outdir=OUTDIR
-        ),
-        workdir,
-        stem="scf",
-        ranks=ranks,
-    )
-    scf = parse_pw_output(scf_text)
-    if not scf.ok():
-        raise QEError(f"scf in {workdir}: {scf.failure_reason()}")
+    # 2. The SCF on the cell whose ELF we are about to dump. With a
+    #    pressure_match this is a short sequence of SCFs, each on a rescaled
+    #    cell, ending on the one that is accepted.
+    scf = None
+    attempts = pressure_match.max_scf if pressure_match else 1
+    history = []
+    for attempt in range(attempts):
+        stem = "scf" if attempts == 1 else f"scf{attempt + 1}"
+        scf_text = runner.run(
+            "pw.x",
+            write_pw_input(
+                current, settings, calculation="scf", prefix=PREFIX, outdir=OUTDIR
+            ),
+            workdir,
+            stem=stem,
+            ranks=ranks,
+        )
+        scf = parse_pw_output(scf_text)
+        if not scf.ok():
+            raise QEError(f"{stem} in {workdir}: {scf.failure_reason()}")
+
+        if pressure_match is None or scf.pressure_gpa is None:
+            break
+
+        volume = current.get_volume()
+        logger.info(
+            "%s: V = %.2f A^3, P = %.1f GPa (target %.1f)",
+            stem, volume, scf.pressure_gpa, pressure_match.target_gpa,
+        )
+        if pressure_match.within_tolerance(scf.pressure_gpa):
+            break
+        if attempt == attempts - 1:
+            # Out of budget: keep this SCF, and let the recorded pressure say
+            # how far it landed rather than pretending it hit the target.
+            break
+
+        previous = history[-1] if history else None
+        history.append((volume, scf.pressure_gpa))
+        current = scale_to_volume(
+            current, pressure_match.next_volume(volume, scf.pressure_gpa, previous)
+        )
+        ranks = runner.ranks_for(current, settings.ecutwfc)
 
     # 3. NSCF on a denser mesh - what the ELF and the projected DOS are read from.
     nscf_text = runner.run(

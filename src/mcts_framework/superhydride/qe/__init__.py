@@ -27,6 +27,7 @@ from .inputs import (
 )
 from .outputs import PwResult, hydrogen_dos_fraction, parse_pw_output, relaxed_atoms
 from .pipeline import GroundStateResult, clean_scratch, run_ground_state
+from .pressure import PressureMatch, scale_to_volume
 from .runner import QEError, QERunner
 
 __all__ = [
@@ -35,6 +36,8 @@ __all__ = [
     "QEError",
     "PwResult",
     "GroundStateResult",
+    "PressureMatch",
+    "scale_to_volume",
     "QuantumEspressoEvaluator",
     "run_ground_state",
     "clean_scratch",

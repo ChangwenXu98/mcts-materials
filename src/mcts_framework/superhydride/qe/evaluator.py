@@ -25,9 +25,11 @@ import pandas as pd
 
 from ...core.evaluator import PropertyEvaluator
 from ..evaluator import normalize_formula
+from ..prerelax import MacePrerelax, PrerelaxError
 from ..structure import SuperhydrideStructure
 from .inputs import QESettings
 from .pipeline import clean_scratch, run_ground_state
+from .pressure import PressureMatch
 from .runner import QEError, QERunner
 
 logger = logging.getLogger(__name__)
@@ -66,6 +68,8 @@ class QuantumEspressoEvaluator(PropertyEvaluator):
         work_root: str,
         *,
         pressure_gpa: Optional[float] = None,
+        prerelax: Optional[MacePrerelax] = None,
+        pressure_match: Optional[PressureMatch] = None,
         relax: bool = True,
         relax_passes: int = 2,
         cache_path: Optional[str] = None,
@@ -78,8 +82,16 @@ class QuantumEspressoEvaluator(PropertyEvaluator):
             runner: how to invoke the QE binaries.
             work_root: parent directory for the per-candidate run directories.
                 Put this on scratch - the funnel writes wavefunctions and cubes.
-            pressure_gpa: target pressure for the relaxation. Required when
-                ``relax`` is True.
+            pressure_gpa: target pressure. Required when ``relax`` is True,
+                and the target the pre-relaxation drives towards.
+            pressure_match: drive the SCF stress onto the target by isotropic
+                cell scaling instead of a vc-relax, so candidates are compared
+                at one compression rather than at whatever pressure the
+                pre-relaxation happened to land on.
+            prerelax: optional MACE pre-relaxation. Paired with ``relax=False``
+                this is the screening mode - cheap geometry, single-point DFT -
+                and the cache's pressure_gpa column then measures how far each
+                pre-relaxed cell landed from the target.
             relax: vc-relax each candidate before the SCF. Leave True unless the
                 template is already relaxed at this pressure with this protocol
                 - and note substituting a host changes the equilibrium cell, so
@@ -111,6 +123,8 @@ class QuantumEspressoEvaluator(PropertyEvaluator):
         self.runner = runner
         self.work_root = Path(work_root)
         self.pressure_gpa = pressure_gpa
+        self.prerelax = prerelax
+        self.pressure_match = pressure_match
         self.relax = relax
         self.relax_passes = relax_passes
         self.cache_path = cache_path
@@ -176,11 +190,13 @@ class QuantumEspressoEvaluator(PropertyEvaluator):
                 self.runner,
                 str(workdir),
                 pressure_gpa=self.pressure_gpa,
+                prerelax=self.prerelax,
+                pressure_match=self.pressure_match,
                 relax=self.relax,
                 relax_passes=self.relax_passes,
                 keep_cube=self.keep_cube,
             )
-        except (QEError, ValueError, FileNotFoundError) as exc:
+        except (QEError, PrerelaxError, ValueError, FileNotFoundError) as exc:
             logger.error("QE funnel failed for %s: %s", formula, exc)
             self._record({
                 "formula": formula,

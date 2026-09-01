@@ -266,3 +266,25 @@ def test_default_protocol_matches_the_papers_physical_choices():
     assert settings.smearing == "mp"
     assert settings.kspacing_scf == pytest.approx(2 * math.pi * 0.036)
     assert settings.kspacing_nscf == pytest.approx(2 * math.pi * 0.018)
+
+
+def test_nscf_gets_a_looser_convergence_threshold_than_the_scf(settings, make_structure):
+    """
+    QE derives its per-band Davidson threshold from conv_thr/nelec. At the
+    SCF's 1e-10 that is ~1e-12, which the EMPTY states above E_F cannot reach,
+    and pw.x stops with "too many bands are not converged" - observed here on
+    LaBeH8 at 90 Ry. The density is already converged and the NSCF does not
+    change it, so the empty states get their own threshold.
+    """
+    scf = write_pw_input(
+        make_structure().atoms, settings, calculation="scf", prefix="p", outdir="./s"
+    )
+    nscf = write_pw_input(
+        make_structure().atoms, settings, calculation="nscf", prefix="p", outdir="./s"
+    )
+    assert float(namelist_value(scf, "conv_thr")) == settings.conv_thr
+    assert float(namelist_value(nscf, "conv_thr")) == settings.conv_thr_nscf
+    assert settings.conv_thr_nscf > settings.conv_thr
+    # A wider Davidson subspace, for the same reason.
+    assert namelist_value(nscf, "diago_david_ndim") == "4"
+    assert "diago_david_ndim" not in scf

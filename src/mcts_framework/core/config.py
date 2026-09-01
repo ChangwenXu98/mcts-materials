@@ -264,6 +264,15 @@ class QuantumEspressoConfig(BaseModel):
     )
     degauss: float = Field(0.02, gt=0, description="Smearing width (Ry)")
     conv_thr: float = Field(1e-10, gt=0, description="SCF convergence threshold (Ry)")
+    conv_thr_nscf: float = Field(
+        1e-8,
+        gt=0,
+        description="NSCF convergence threshold (Ry). Looser than the SCF on "
+        "purpose: QE derives its per-band Davidson threshold from "
+        "conv_thr/nelec, and the empty states above E_F cannot reach the SCF's "
+        "value, so pw.x stops with 'too many bands are not converged'. The "
+        "density is already converged; the NSCF does not change it.",
+    )
     kspacing_scf: float = Field(
         0.2262, gt=0, description="k-point spacing for SCF (1/A, 2*pi convention)"
     )
@@ -277,6 +286,44 @@ class QuantumEspressoConfig(BaseModel):
         "true: a pressure-stabilised hydride relaxed to 0 GPa is a different "
         "material.",
     )
+    prerelax: bool = Field(
+        False,
+        description="Pre-relax each candidate with a MACE-MP potential before "
+        "the DFT step. Paired with relax=false this is screening mode: cheap "
+        "geometry, single-point DFT. The cell is then NOT variationally "
+        "relaxed at the DFT level, so the SCF's recorded pressure measures how "
+        "far it landed from the target - screen on that column.",
+    )
+    prerelax_model: str = Field(
+        "medium", description="MACE-MP model size: small | medium | large"
+    )
+    prerelax_device: str = Field(
+        "cpu",
+        description="Device for the pre-relaxation. CPU is right inside a DFT "
+        "campaign - it takes seconds and the cores are for pw.x.",
+    )
+    prerelax_fmax: float = Field(
+        0.05, gt=0, description="Force convergence for the pre-relaxation (eV/A)"
+    )
+    prerelax_max_steps: int = Field(
+        300, ge=1, description="Optimiser step cap for the pre-relaxation"
+    )
+
+    pressure_match: bool = Field(
+        False,
+        description="Drive the SCF's own stress onto pressure_gpa by isotropic "
+        "cell scaling instead of a vc-relax. A MACE pre-relaxation's pressure "
+        "error is strongly compound-dependent, so without this candidates are "
+        "compared at different compressions - which phi, phi* and H_DOS are all "
+        "steeply sensitive to. Costs a few extra SCFs and no BFGS.",
+    )
+    pressure_tolerance_gpa: float = Field(
+        10.0, gt=0, description="Accept an SCF this close to pressure_gpa"
+    )
+    pressure_max_scf: int = Field(
+        3, ge=1, description="Cap on SCF evaluations while matching the pressure"
+    )
+
     relax: bool = Field(True, description="vc-relax each candidate before the SCF")
     relax_passes: int = Field(
         2,
@@ -321,9 +368,9 @@ class QuantumEspressoConfig(BaseModel):
                 "Quantum ESPRESSO needs a pseudopotential directory: set "
                 "pseudo_dir in the config or export ESPRESSO_PSEUDO"
             )
-        if self.relax and self.pressure_gpa is None:
+        if (self.relax or self.prerelax) and self.pressure_gpa is None:
             raise ValueError(
-                "relax=true requires pressure_gpa. Relaxing a "
+                "relax=true or prerelax=true requires pressure_gpa. Relaxing a "
                 "pressure-stabilised hydride with no target relaxes it to "
                 "0 GPa, which is a different material."
             )

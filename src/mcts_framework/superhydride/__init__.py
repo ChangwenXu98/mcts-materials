@@ -26,6 +26,7 @@ from .descriptors import (
 )
 from .evaluator import DescriptorTableEvaluator
 from .moves import HostSubstitutionMoves
+from .prerelax import MacePrerelax, PrerelaxError
 from .rewards import (
     BELLI2025_MAE_K,
     BELLI2025_MAX_ERROR_K,
@@ -44,6 +45,8 @@ __all__ = [
     "SuperhydrideStructure",
     "HostSubstitutionMoves",
     "DescriptorTableEvaluator",
+    "MacePrerelax",
+    "PrerelaxError",
     "TcReward",
     "create_superhydride_reward",
     "belli2025_tc",

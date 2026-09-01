@@ -1,0 +1,84 @@
+# Superhydride Tc campaign - LaBeH8 (LaBH8 structure type) at 150 GPa.
+#
+# Protocol, and why each number is what it is:
+#
+#   Root        LaBeH8 in the Fm-3m LaBH8 type. Geometry is fixed by symmetry
+#               apart from the lattice constant and the H 32f coordinate, both
+#               refined by the MACE pre-relaxation. H_f = 0.8, and since
+#               Tc ~ H_f^3 the template sets the ceiling.
+#
+#   Geometry    MACE-MP medium pre-relax at constant pressure, then the DFT
+#               pressure is matched by isotropic cell scaling. Without the
+#               match, MACE's pressure error is compound-dependent enough to
+#               put candidates at 160 vs 300 GPa - phi, phi* and H_DOS are all
+#               steeply pressure-sensitive, so that would rank compression
+#               rather than chemistry. No BFGS, no ionic re-relaxation.
+#
+#   Cutoff      90 Ry / 360 Ry (ratio 4, exact for these norm-conserving ONCV
+#               pseudopotentials). phi is a percolation threshold on the SCF's
+#               FFT grid, so it moves with the cutoff: fixed for the campaign.
+#
+#   k-points    SCF 4x4x4, NSCF 8x8x8 for this cell, by measurement. Gamma-only
+#               puts E_F 5 eV off and H_DOS at 0.44 against a converged 0.86 -
+#               a factor of two in a term the fit takes the cube root of.
+#               6x6x6 doubles the cost and moves Tc by 0.5%.
+#
+#   Search      One host swap per move; branching is the sum over host sites.
+#               n_rollout = 0 because every rollout walk is a full DFT funnel -
+#               with evaluations this expensive, each one should be a node the
+#               search actually chose.
+#
+# Cluster paths come from the environment (QE_BIN_DIR, ESPRESSO_PSEUDO) so this
+# file stays shareable.
+
+material_type: superhydride
+
+mcts:
+  iterations: 300
+  exploration_constant: 0.1     # rewards are normalised to (0, 1]
+  termination_limit: 40
+  selection_mode: ucb1
+  rollout_depth: 1
+  n_rollout: 0                  # no random lookahead: DFT is the budget
+  rollout_aggregation: max
+  search_mode: thorough         # spend the budget on a broad top-N list
+  seed: 0
+  output_dir: campaign/results
+
+superhydride:
+  structure_path: campaign/LaBeH8_root.cif
+  host_palette: high_tc         # electropositive + covalent; no late TMs
+  preserve_distinct_hosts: true # keep the search ternary
+  normalize_reward: true
+  evaluator: quantum_espresso
+
+  quantum_espresso:
+    # --- protocol ---
+    ecutwfc: 90.0
+    ecutrho: 360.0
+    degauss: 0.02
+    conv_thr: 1.0e-10
+    conv_thr_nscf: 1.0e-8       # empty states cannot reach the SCF threshold
+    kspacing_scf: 0.60          # -> 4x4x4 for this cell
+    kspacing_nscf: 0.28         # -> 8x8x8
+
+    # --- geometry ---
+    pressure_gpa: 150.0
+    prerelax: true
+    prerelax_model: medium
+    prerelax_device: cpu
+    relax: false                # no vc-relax; the pressure match replaces it
+    pressure_match: true
+    pressure_tolerance_gpa: 10.0
+    pressure_max_scf: 3
+
+    # --- execution ---
+    mpi_command: mpirun
+    ranks: 16                   # clamped per structure to the FFT plane count
+    timeout_s: 2400
+
+    # --- i/o ---
+    work_root: /scratch/venkvis_root/venkvis/changwex/superhydride-runs
+    cache_path: campaign/results/qe_descriptors.csv
+    keep_scratch: false
+    keep_cube: false

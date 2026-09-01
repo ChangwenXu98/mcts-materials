@@ -68,6 +68,14 @@ class QESettings:
     #: so they inherit it amplified. Never loosen it to get a stuck run past a
     #: failure - that turns a visible failure into an invisible one.
     conv_thr: float = 1e-10
+    #: Ry, for the NSCF only. QE derives the Davidson threshold from
+    #: conv_thr/nelec, and at the SCF's 1e-10 that is ~1e-12 per band - which
+    #: the EMPTY states above E_F cannot reach, so pw.x stops with "too many
+    #: bands are not converged". Those states carry no charge and only have to
+    #: be good enough to project a DOS onto, so the NSCF gets its own, looser
+    #: threshold. This is not the SCF being loosened: the density is already
+    #: converged to conv_thr and the NSCF does not change it.
+    conv_thr_nscf: float = 1e-8
     forc_conv_thr: float = 1e-4      # Ry/bohr
     press_conv_thr: float = 0.5      # kbar
     nstep: int = 200
@@ -232,7 +240,12 @@ def write_pw_input(
     ]
     system.append("/")
 
-    electrons = ["&ELECTRONS", f"  conv_thr = {settings.conv_thr}", "/"]
+    conv_thr = settings.conv_thr_nscf if calculation == "nscf" else settings.conv_thr
+    electrons = ["&ELECTRONS", f"  conv_thr = {conv_thr}"]
+    if calculation == "nscf":
+        # A wider Davidson subspace helps the empty states converge at all.
+        electrons.append("  diago_david_ndim = 4")
+    electrons.append("/")
 
     blocks = [control, system, electrons]
     if calculation in ("relax", "vc-relax"):

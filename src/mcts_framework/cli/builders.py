@@ -181,13 +181,20 @@ def _build_superhydride(config: Config) -> Tuple[object, object, "PropertyEvalua
 
 def _build_qe_evaluator(qc: object) -> "PropertyEvaluator":
     """Assemble the Quantum ESPRESSO evaluator from config.superhydride.quantum_espresso."""
-    from ..superhydride.qe import QERunner, QESettings, QuantumEspressoEvaluator
+    from ..superhydride import MacePrerelax
+    from ..superhydride.qe import (
+        PressureMatch,
+        QERunner,
+        QESettings,
+        QuantumEspressoEvaluator,
+    )
 
     settings = QESettings(
         ecutwfc=qc.ecutwfc,
         ecutrho=qc.ecutrho,
         degauss=qc.degauss,
         conv_thr=qc.conv_thr,
+        conv_thr_nscf=qc.conv_thr_nscf,
         kspacing_scf=qc.kspacing_scf,
         kspacing_nscf=qc.kspacing_nscf,
         pseudo_dir=qc.pseudo_dir,
@@ -200,11 +207,32 @@ def _build_qe_evaluator(qc: object) -> "PropertyEvaluator":
         environment_setup=qc.environment_setup,
         timeout_s=qc.timeout_s,
     )
+    prerelax = (
+        MacePrerelax(
+            model=qc.prerelax_model,
+            device=qc.prerelax_device,
+            fmax=qc.prerelax_fmax,
+            max_steps=qc.prerelax_max_steps,
+        )
+        if qc.prerelax
+        else None
+    )
+    match = (
+        PressureMatch(
+            target_gpa=qc.pressure_gpa,
+            tolerance_gpa=qc.pressure_tolerance_gpa,
+            max_scf=qc.pressure_max_scf,
+        )
+        if qc.pressure_match
+        else None
+    )
     return QuantumEspressoEvaluator(
         settings,
         runner,
         work_root=qc.work_root,
         pressure_gpa=qc.pressure_gpa,
+        prerelax=prerelax,
+        pressure_match=match,
         relax=qc.relax,
         relax_passes=qc.relax_passes,
         cache_path=qc.cache_path,
