@@ -83,12 +83,23 @@ def _z(symbol: str) -> int:
     return atomic_numbers.get(symbol, 0)
 
 
+#: Below this many completed candidates, a top-vs-bottom comparison is noise.
+MIN_FOR_CHARACTERISATION = 9
+
+
 def characterise(ranked: pd.DataFrame, top_n: int) -> dict:
-    """Compare the top of the ranking against the rest, descriptor by descriptor."""
-    if len(ranked) < 4:
+    """
+    Compare the top of the ranking against the bottom, descriptor by descriptor.
+
+    The two groups are the top and bottom third, so the contrast is between
+    comparable sample sizes. Ranking eight candidates against one - which a
+    naive head/tail split gives early in a campaign - says nothing.
+    """
+    if len(ranked) < MIN_FOR_CHARACTERISATION:
         return {}
-    top = ranked.head(top_n)
-    rest = ranked.tail(max(len(ranked) - top_n, 1))
+    group = max(3, min(top_n, len(ranked) // 3))
+    top = ranked.head(group)
+    rest = ranked.tail(group)
 
     def gap(column):
         return {

@@ -31,6 +31,36 @@ def sub_formula(formula: str) -> str:
     return "".join(out)
 
 
+def tree_payload(results_dir: Path) -> dict:
+    """
+    Flatten tree.json into what the deck's viewer needs.
+
+    Reward is carried through as-is (0.0 marks a candidate whose funnel failed)
+    and the descriptors come along so a node can be inspected without a second
+    lookup.
+    """
+    path = results_dir / "tree.json"
+    if not path.exists():
+        return {"nodes": [], "root": None}
+    raw = json.loads(path.read_text())
+    nodes = []
+    for n in raw.get("nodes", []):
+        props = n.get("properties") or {}
+        nodes.append({
+            "id": n["id"],
+            "parent": n["parent"],
+            "name": str(n.get("identifier", "?")).split("|")[0],
+            "reward": n.get("own_reward"),
+            "visits": n.get("visits", 0),
+            "terminated": bool(n.get("terminated")),
+            "phi": props.get("phi"),
+            "phi_star": props.get("phi_star"),
+            "h_dos": props.get("h_dos"),
+            "p": props.get("pressure_gpa"),
+        })
+    return {"nodes": nodes, "root": raw.get("root_id")}
+
+
 def replace_region(text: str, name: str, body: str) -> str:
     start, end = f"<!--{name}_START-->", f"<!--{name}_END-->"
     head, _, tail = text.partition(start)
@@ -163,8 +193,15 @@ def main() -> int:
     text = replace_region(text, "RESULTS", results_region(data))
     text = replace_region(text, "STRUCT", struct_region(data))
     text = replace_region(text, "STATUS", status_region(data))
+    tree = tree_payload(Path(sys.argv[1]).parent)
+    text = replace_region(
+        text, "TREE",
+        '      <script id="tree-data" type="application/json">'
+        + json.dumps(tree, separators=(",", ":")) + "</script>",
+    )
     deck_path.write_text(text)
-    print(f"deck updated: {data.get('succeeded', 0)} evaluated, "
+    print(f"deck updated: {len(tree['nodes'])} tree nodes, "
+          f"{data.get('succeeded', 0)} evaluated, "
           f"{len(data.get('top', []))} in the table "
           f"(fit max {TC_MAX_K:.1f} K, phi* optimum {PHI_STAR_OPTIMUM:.3f})")
     return 0
