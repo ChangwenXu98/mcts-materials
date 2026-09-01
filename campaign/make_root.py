@@ -12,6 +12,7 @@ enough for the optimiser, not right.
 The primitive fcc cell holds 10 atoms: 1 La + 1 Be + 8 H, H_f = 0.8.
 """
 import sys
+
 from ase.io import write
 from ase.spacegroup import crystal
 

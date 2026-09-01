@@ -67,7 +67,6 @@ ALKALI = {"Li", "Na", "K", "Rb", "Cs"}
 def points_payload(results_dir: Path) -> dict:
     """Per-candidate scatter data: the descriptors, the fit, and one category."""
     import csv
-    import math
     import re
 
     from mcts_framework.superhydride.rewards import belli2025_tc

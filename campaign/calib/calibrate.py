@@ -3,7 +3,9 @@
 The geometry is pre-relaxed ONCE with MACE and reused, so the only thing
 varying between rows is the Brillouin-zone sampling.
 """
-import json, sys, time
+import json
+import sys
+import time
 from pathlib import Path
 
 from ase.io import read

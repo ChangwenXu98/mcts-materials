@@ -1,10 +1,13 @@
 """Validate the campaign protocol: MACE pre-relax -> pressure-matched SCF."""
-import json, sys, time
+import json
+import sys
+import time
 from pathlib import Path
+
 from ase.io import read
+
 from mcts_framework.superhydride import MacePrerelax, belli2025_tc
-from mcts_framework.superhydride.qe import (PressureMatch, QERunner, QESettings,
-                                            run_ground_state)
+from mcts_framework.superhydride.qe import PressureMatch, QERunner, QESettings, run_ground_state
 
 ROOT, PSEUDO, BIN, RANKS = Path(sys.argv[1]), sys.argv[2], sys.argv[3], int(sys.argv[4])
 TARGET = 150.0
