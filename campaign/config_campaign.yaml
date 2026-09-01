@@ -70,7 +70,7 @@ superhydride:
     relax: false                # no vc-relax; the pressure match replaces it
     pressure_match: true
     pressure_tolerance_gpa: 10.0
-    pressure_max_scf: 3
+    pressure_max_scf: 5
 
     # --- execution ---
     mpi_command: mpirun
