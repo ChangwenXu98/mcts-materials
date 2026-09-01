@@ -61,6 +61,47 @@ def tree_payload(results_dir: Path) -> dict:
     return {"nodes": nodes, "root": raw.get("root_id")}
 
 
+ALKALI = {"Li", "Na", "K", "Rb", "Cs"}
+
+
+def points_payload(results_dir: Path) -> dict:
+    """Per-candidate scatter data: the descriptors, the fit, and one category."""
+    import csv
+    import math
+    import re
+
+    from mcts_framework.superhydride.rewards import belli2025_tc
+
+    path = results_dir / "qe_descriptors.csv"
+    if not path.exists():
+        return {"points": []}
+    points = []
+    with open(path, newline="") as handle:
+        for row in csv.DictReader(handle):
+            if not str(row.get("status", "")).startswith("ok"):
+                continue
+            try:
+                phi, phi_star = float(row["phi"]), float(row["phi_star"])
+                h_f, h_dos = float(row["h_f"]), float(row["h_dos"])
+                pressure = float(row["pressure_gpa"])
+            except (TypeError, ValueError):
+                continue
+            hosts = {e for e, _ in re.findall(r"([A-Z][a-z]?)(\d*)", row["formula"])
+                     if e and e != "H"}
+            points.append({
+                "f": row["formula"],
+                "phi": round(phi, 4),
+                "ps": round(phi_star, 4),
+                "hdos": round(h_dos, 4),
+                "p": round(pressure, 1),
+                "tc": round(belli2025_tc(phi, phi_star, h_f, h_dos), 1),
+                "alkali": bool(hosts & ALKALI),
+                "pok": abs(pressure - 150.0) <= 10.0,
+            })
+    points.sort(key=lambda d: -d["tc"])
+    return {"points": points}
+
+
 def replace_region(text: str, name: str, body: str) -> str:
     start, end = f"<!--{name}_START-->", f"<!--{name}_END-->"
     head, _, tail = text.partition(start)
@@ -193,7 +234,13 @@ def main() -> int:
     text = replace_region(text, "RESULTS", results_region(data))
     text = replace_region(text, "STRUCT", struct_region(data))
     text = replace_region(text, "STATUS", status_region(data))
-    tree = tree_payload(Path(sys.argv[1]).parent)
+    results_dir = Path(sys.argv[1]).parent
+    text = replace_region(
+        text, "POINTS",
+        '      <script id="points-data" type="application/json">'
+        + json.dumps(points_payload(results_dir), separators=(",", ":")) + "</script>",
+    )
+    tree = tree_payload(results_dir)
     text = replace_region(
         text, "TREE",
         '      <script id="tree-data" type="application/json">'

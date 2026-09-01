@@ -65,8 +65,24 @@ class MacePrerelax:
     fmax: float = 0.05
     max_steps: int = 300
     dtype: str = "float64"
+    #: Raise when the optimiser hits max_steps instead of returning its best
+    #: geometry. Default False, and the reason is a search bias rather than a
+    #: convenience: a candidate that fails here scores 0.0, which the search
+    #: reads as "bad material" when it means "the optimiser gave up". That
+    #: teaches the search to avoid regions where MACE struggles rather than
+    #: regions where the physics is poor. In the campaign that surfaced this,
+    #: 7 of 8 early failures were this and nothing else.
+    #:
+    #: Returning the unconverged geometry is safe here because a DFT step
+    #: follows and measures it: with a pressure match the cell is corrected
+    #: outright, and the recorded pressure says how far it landed. The caller
+    #: is told via `last_relax_converged`.
+    strict: bool = False
 
     _calculator: object = None
+    #: Whether the most recent relax() reached fmax. False after a run that
+    #: exhausted max_steps and was returned anyway.
+    last_relax_converged: bool = True
 
     def _get_calculator(self):
         """Build the MACE calculator once and keep it; construction dominates."""
@@ -103,9 +119,8 @@ class MacePrerelax:
             input writer).
 
         Raises:
-            PrerelaxError: if MACE is unavailable or the optimiser hits
-                ``max_steps`` without converging - an unconverged geometry is
-                not a cell to compute an ELF on.
+            PrerelaxError: if MACE is unavailable, or the optimiser hits
+                ``max_steps`` and ``strict`` is set.
         """
         from ase.filters import FrechetCellFilter
         from ase.optimize import FIRE
@@ -121,12 +136,16 @@ class MacePrerelax:
             )
 
         optimizer = FIRE(target, logfile=None)
-        converged = optimizer.run(fmax=self.fmax, steps=self.max_steps)
+        converged = bool(optimizer.run(fmax=self.fmax, steps=self.max_steps))
+        self.last_relax_converged = converged
         if not converged:
-            raise PrerelaxError(
+            message = (
                 f"MACE pre-relaxation did not reach fmax={self.fmax} eV/A in "
                 f"{self.max_steps} steps for {working.get_chemical_formula()}"
             )
+            if self.strict:
+                raise PrerelaxError(message)
+            logger.warning("%s; using the geometry it reached", message)
 
         relaxed = working.copy()
         relaxed.calc = None

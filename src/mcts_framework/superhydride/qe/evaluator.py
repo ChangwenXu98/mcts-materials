@@ -219,6 +219,12 @@ class QuantumEspressoEvaluator(PropertyEvaluator):
             if not self.keep_scratch:
                 clean_scratch(str(workdir))
 
+        # A geometry the pre-relaxation could not converge is usable - the DFT
+        # step measured it - but the reader must be able to see which ones.
+        status = "ok"
+        if self.prerelax is not None and not self.prerelax.last_relax_converged:
+            status = "ok: prerelax unconverged"
+
         logger.info(
             "%s: phi=%.3f phi*=%.3f H_f=%.3f H_DOS=%.3f (grid %s, P=%s GPa)",
             formula, result.phi, result.phi_star, result.h_f, result.h_dos,
@@ -233,7 +239,7 @@ class QuantumEspressoEvaluator(PropertyEvaluator):
             "h_f": result.h_f,
             "fermi_ev": result.fermi_ev,
             "pressure_gpa": result.pressure_gpa,
-            "status": "ok",
+            "status": status,
         })
         return {**result.as_properties(), "formula": formula}
 

@@ -51,7 +51,7 @@ def load(results_dir: Path) -> pd.DataFrame:
     if not cache.exists():
         return pd.DataFrame()
     frame = pd.read_csv(cache)
-    ok = frame[frame["status"] == "ok"].copy()
+    ok = frame[frame["status"].astype(str).str.startswith("ok")].copy()
     if ok.empty:
         return ok
     ok["tc_k"] = [
@@ -139,7 +139,7 @@ def main() -> int:
     if cache.exists():
         allrows = pd.read_csv(cache)
         attempted = int(len(allrows))
-        failed = int((allrows["status"] != "ok").sum())
+        failed = int((~allrows["status"].astype(str).str.startswith("ok")).sum())
 
     payload = {
         "progress": progress,

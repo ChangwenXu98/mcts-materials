@@ -1,0 +1,5 @@
+/home/changwex/turbo/anaconda3/envs/mace-agent/lib/python3.10/site-packages/e3nn/o3/_wigner.py:10: UserWarning: Environment variable TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD detected, since the`weights_only` argument was not explicitly passed to `torch.load`, forcing weights_only=False.
+  _Jd, _W3j_flat, _W3j_indices = torch.load(os.path.join(os.path.dirname(__file__), 'constants.pt'))
+/home/changwex/turbo/anaconda3/envs/mace-agent/lib/python3.10/site-packages/mace/calculators/mace.py:226: UserWarning: Environment variable TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD detected, since the`weights_only` argument was not explicitly passed to `torch.load`, forcing weights_only=False.
+  torch.load(f=model_path, map_location=device)
+[2026-09-01T17:28:14.006] error: *** JOB 27579626 ON lh1727 CANCELLED AT 2026-09-01T17:28:14 DUE TO TIME LIMIT ***

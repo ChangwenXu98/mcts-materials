@@ -303,3 +303,61 @@ def test_real_quantum_espresso_funnel(tmp_path):
     assert result.h_f == pytest.approx(0.75)
     assert 0.0 < result.h_dos < 1.0
     assert result.pressure_gpa == pytest.approx(200.0, abs=25.0)
+
+
+# --- Pre-relaxation that does not converge --------------------------------
+
+
+class _StubPrerelax:
+    """Stands in for MacePrerelax without needing torch."""
+
+    def __init__(self, converged: bool):
+        self.last_relax_converged = converged
+        self.calls = 0
+
+    def relax(self, atoms, pressure_gpa=None):
+        self.calls += 1
+        return atoms
+
+
+async def test_an_unconverged_prerelax_still_scores(
+    settings, tmp_path, make_structure, monkeypatch
+):
+    """
+    Failing the candidate here would score it 0.0, which the search reads as
+    "bad material" when it means "the optimiser gave up" - biasing the search
+    away from regions the potential finds hard rather than regions where the
+    physics is poor. A DFT step follows and measures the geometry, so the
+    candidate is kept and flagged instead.
+    """
+    stub_funnel(monkeypatch, fake_result())
+    evaluator = make_evaluator(settings, tmp_path, prerelax=_StubPrerelax(converged=False))
+    properties = await evaluator.evaluate(make_structure())
+    assert properties["phi"] == pytest.approx(0.60)
+    assert TcReward().compute_reward(properties) > 0.0
+
+
+async def test_an_unconverged_prerelax_is_recorded_in_the_cache(
+    settings, tmp_path, make_structure, monkeypatch
+):
+    stub_funnel(monkeypatch, fake_result())
+    cache = tmp_path / "qe_cache.csv"
+    evaluator = make_evaluator(
+        settings, tmp_path, cache_path=str(cache), prerelax=_StubPrerelax(converged=False)
+    )
+    await evaluator.evaluate(make_structure())
+    status = str(pd.read_csv(cache).iloc[0]["status"])
+    assert status.startswith("ok")            # still a completed candidate
+    assert "unconverged" in status            # but visibly so
+
+
+async def test_a_converged_prerelax_records_a_plain_ok(
+    settings, tmp_path, make_structure, monkeypatch
+):
+    stub_funnel(monkeypatch, fake_result())
+    cache = tmp_path / "qe_cache.csv"
+    evaluator = make_evaluator(
+        settings, tmp_path, cache_path=str(cache), prerelax=_StubPrerelax(converged=True)
+    )
+    await evaluator.evaluate(make_structure())
+    assert pd.read_csv(cache).iloc[0]["status"] == "ok"
