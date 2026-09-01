@@ -136,16 +136,21 @@ def main() -> int:
 
     cache = results_dir / "qe_descriptors.csv"
     attempted = failed = 0
+    failures: dict[str, int] = {}
     if cache.exists():
         allrows = pd.read_csv(cache)
         attempted = int(len(allrows))
-        failed = int((~allrows["status"].astype(str).str.startswith("ok")).sum())
+        status = allrows["status"].astype(str)
+        bad = status[~status.str.startswith("ok")]
+        failed = int(len(bad))
+        failures = {str(k): int(v) for k, v in bad.value_counts().items()}
 
     payload = {
         "progress": progress,
         "attempted": attempted,
         "succeeded": int(len(ranked)),
         "failed": failed,
+        "failures": failures,
         "off_pressure": int((~ranked["pressure_ok"]).sum()) if len(ranked) else 0,
         "top": [
             {

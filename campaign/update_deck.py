@@ -108,6 +108,15 @@ def replace_region(text: str, name: str, body: str) -> str:
     return f"{head}{start}\n{body}\n      {end}{tail}"
 
 
+#: The evaluator's cache records the exception class, not a cause; these name
+#: what each class means without asserting a chemistry the status column does
+#: not carry.
+FAILURE_LABELS = {
+    "failed: PrerelaxError": "the MACE pre-relaxation hit its step budget",
+    "failed: QEError": "Quantum ESPRESSO stopped (no pseudopotential for the host)",
+}
+
+
 def results_region(data: dict) -> str:
     progress = data.get("progress", {})
     top = data.get("top", [])
@@ -147,8 +156,13 @@ def results_region(data: dict) -> str:
 
     note = (
         f"{succeeded} candidate{'s' if succeeded != 1 else ''} through the funnel, "
-        f"{failed} failed (mostly missing pseudopotentials on the lanthanide chain). "
+        f"{failed} failed"
     )
+    breakdown = ", ".join(
+        f"{n}&times; {FAILURE_LABELS.get(status, html.escape(status))}"
+        for status, n in sorted(data.get("failures", {}).items(), key=lambda kv: -kv[1])
+    )
+    note += f" &mdash; {breakdown}. " if breakdown else ". "
     if off:
         note += (
             f"<strong>{off}</strong> landed outside &plusmn;10&nbsp;GPa of the 150&nbsp;GPa "
